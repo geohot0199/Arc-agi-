@@ -477,7 +477,8 @@ class MyAgent(Agent):
             self.frames = []
             self.action_counter = 0
             self.game_id = kwargs.get("game_id", "mock")
-        self.rng = random.Random(CFG["SEED"] ^ (hash(self.game_id) & 0xFFFF))
+        import zlib
+        self.rng = random.Random(CFG["SEED"] ^ zlib.crc32(self.game_id.encode()))
         self._t0 = time.time()
 
         # memory ------------------------------------------------------------
@@ -506,6 +507,7 @@ class MyAgent(Agent):
         self.resets_this_level = 0
         self.info_probes_used = 0
         self.click_probes_used = 0
+        self._probes_built = False
         self._cur_hash = None
         self._mset_now = None
         self.probe_queue = []
@@ -597,9 +599,14 @@ class MyAgent(Agent):
             "click_local_change": False, "click_level_change": False,
             "global_recolor": False, "simple_noop_only": False,
         }
-        if event in ("DEATH", "WIN", "LEVEL_UP") or not diff or not grid:
-            if event in ("LEVEL_UP", "WIN") and name == "ACTION6":
-                ev["click_level_change"] = True
+        if event in ("LEVEL_UP", "WIN") and name == "ACTION6":
+            ev["click_level_change"] = True
+            return ev
+        if event == "DEATH" or not grid:
+            return ev
+        if not diff:  # no-op: cheap evidence about which archetype we're NOT in
+            if name in (f"ACTION{i}" for i in range(1, 6)):
+                ev["simple_noop_only"] = True
             return ev
         vanished = [(x, y) for x, y, o, n in diff if o != 0 and n == 0]
         appeared = [(x, y) for x, y, o, n in diff if o == 0 and n != 0]
@@ -926,14 +933,15 @@ class MyAgent(Agent):
             return self._finalize(act, "RESET", "RESET", s_hash,
                                   "won a level; continue to next")
 
-        # 3) one-time setup
+        # 3) one-time setup (probe queue is built exactly once per game)
         if self.llm is None:
             self._llm_init()
-        if self.probing and not self.probe_queue:
+        if self.probing and not self.probe_queue and not self._probes_built:
             self.probe_queue = [f"ACTION{i}" for i in range(1, 6)
                                 if f"ACTION{i}" in avail]
             if "ACTION7" in avail:
                 self.probe_queue.append("ACTION7")
+            self._probes_built = True
 
         # 4) optional LLM advice (validated + attributed)
         if self.llm_ok:
@@ -945,17 +953,18 @@ class MyAgent(Agent):
                                       "llm proposal accepted")
 
         # 5) probe phase + abstention (v2.1: entropy gate before commitment)
-        if self.probing:
-            if self.probe_queue:
+        if self.probing and self.probe_queue:
+            while self.probe_queue:
                 name = self.probe_queue.pop(0)
-                key = name
-                if name != "RESET" and (s_hash, key) not in self.death_exact:
-                    self.tried_here[s_hash].add(key)
-                    act = self._make_action(name)
-                    return self._finalize(act, name, key, s_hash,
-                                          "probe: identify action")
-            elif (self.posterior.abstain(CFG["ABSTAIN_ENTROPY"])
-                  and self.info_probes_used < CFG["MAX_INFO_PROBES"]):
+                if name == "RESET" or (s_hash, name) in self.death_exact:
+                    continue
+                self.tried_here[s_hash].add(name)
+                act = self._make_action(name)
+                return self._finalize(act, name, name, s_hash,
+                                      "probe: identify action")
+        if self.probing:
+            if (self.posterior.abstain(CFG["ABSTAIN_ENTROPY"])
+                    and self.info_probes_used < CFG["MAX_INFO_PROBES"]):
                 # info-gain probe: run the experiment that best separates the
                 # top-2 hypotheses (movement probe vs click probe).
                 self.info_probes_used += 1
@@ -1040,7 +1049,9 @@ class MyAgent(Agent):
         move_bias = p["MOVEMENT"]
         click_bias = max(p["CLICK_PUZZLE"], p["SELECTION"], p["COLOR_LOGIC"])
         cands = []
-        for name in sorted(avail - {"RESET"}):
+        # ACTION6 candidates come ONLY from the scored funnel (with xy);
+        # bare ACTION6 without coordinates is not a valid action.
+        for name in sorted(avail - {"RESET", "ACTION6"}):
             key = name
             used, noops = self.noop_ledger[name]
             prog = self.progress_ledger[name]
@@ -1081,10 +1092,14 @@ class MyAgent(Agent):
 
         self.rng.shuffle(cands)
         cands.sort(key=lambda c: -c[0])
+        if os.getenv("ATLAS_DEBUG_POLICY"):
+            _log("cands: " + " | ".join(
+                f"{c[2]}{('@%d,%d' % c[3]) if c[3] else ''}:{c[0]:.2f}"
+                for c in cands[:4]))
         for score, key, name, xy in cands:
             act = self._make_action(name)
             if name == "ACTION6":
-                if not self._set_click(act, xy[0], xy[1]):
+                if xy is None or not self._set_click(act, xy[0], xy[1]):
                     # engine can't carry coordinates: disable clicks, next cand
                     if self.click_usable:
                         self.click_usable = False
