@@ -1,0 +1,19 @@
+{
+  "id": "REPLACE_WITH_YOUR_KAGGLE_USERNAME/arc-atlas-p0",
+  "title": "arc-atlas-p0",
+  "code_file": "submission.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": false,
+  "dataset_sources": [],
+  "competition_sources": [
+    "arc-prize-2026-arc-agi-3"
+  ],
+  "model_sources": [
+    "foysalemonshanto/qwen3-8-27b-fp8-repacked-v1/pytorch/hf-fp8"
+  ],
+  "kernel_sources": []
+}
