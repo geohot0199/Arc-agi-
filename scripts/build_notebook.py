@@ -153,40 +153,44 @@ RUN_CELL = dedent(
 
         # Register MyAgent (rewrite __init__.py: the upstream one eagerly
         # imports optional deps we do not ship).
+        INIT_SRC = "\\n".join([
+            "from typing import Type",
+            "from dotenv import load_dotenv",
+            "from .agent import Agent, Playback",
+            "from .swarm import Swarm",
+            "from .templates.random_agent import Random",
+            "from .templates.my_agent import MyAgent",
+            "",
+            "load_dotenv()",
+            "",
+            "AVAILABLE_AGENTS: dict[str, Type[Agent]] = {",
+            "    'random': Random,",
+            "    'myagent': MyAgent,",
+            "}",
+        ])
         with open('/kaggle/working/ARC-AGI-3-Agents/agents/__init__.py', 'w') as f:
-            f.write(\"\"\"from typing import Type
-    from dotenv import load_dotenv
-    from .agent import Agent, Playback
-    from .swarm import Swarm
-    from .templates.random_agent import Random
-    from .templates.my_agent import MyAgent
-
-    load_dotenv()
-
-    AVAILABLE_AGENTS: dict[str, Type[Agent]] = {
-        'random': Random,
-        'myagent': MyAgent,
-    }
-    \"\"\")
+            f.write(INIT_SRC)
 
         # Point the framework at the gateway sidecar + pass ATLAS flags.
         llm = os.getenv('ATLAS_LLM', '0')
+        ENV_LINES = [
+            'SCHEME=http',
+            'HOST=gateway',
+            'PORT=8001',
+            'ARC_API_KEY=test-key-123',
+            'ARC_BASE_URL=http://gateway:8001/',
+            'OPERATION_MODE=online',
+            'ENVIRONMENTS_DIR=',
+            'RECORDINGS_DIR=/kaggle/working/server_recording',
+            f'ATLAS_LLM={llm}',
+            'ATLAS_LLM_URL=http://127.0.0.1:8000/v1',
+            'ATLAS_MAX_ACTIONS=360',
+            'ATLAS_LEVEL_BUDGET=110',
+            'ATLAS_LEVEL_HARD_CAP=220',
+            'ATLAS_CAL_FILE=/kaggle/working/atlas_calibration.jsonl',
+        ]
         with open('/kaggle/working/ARC-AGI-3-Agents/.env', 'w') as f:
-            f.write(f\"\"\"SCHEME=http
-HOST=gateway
-PORT=8001
-ARC_API_KEY=test-key-123
-ARC_BASE_URL=http://gateway:8001/
-OPERATION_MODE=online
-ENVIRONMENTS_DIR=
-RECORDINGS_DIR=/kaggle/working/server_recording
-ATLAS_LLM={llm}
-ATLAS_LLM_URL=http://127.0.0.1:8000/v1
-ATLAS_MAX_ACTIONS=360
-ATLAS_LEVEL_BUDGET=110
-ATLAS_LEVEL_HARD_CAP=220
-ATLAS_CAL_FILE=/kaggle/working/atlas_calibration.jsonl
-\"\"\")
+            f.write("\\n".join(ENV_LINES) + "\\n")
 
         # Run it. The gateway records every action and emits submission.parquet.
         !cd /kaggle/working/ARC-AGI-3-Agents && \\
