@@ -31,8 +31,8 @@ from textwrap import dedent
 # ---------------------------------------------------------------------------
 ACCELERATOR = "rtx6000"  # cpu | t4 | p100 | rtx6000
 MODEL_DIR = (
-    "/kaggle/input/models/foysalemonshanto/"
-    "qwen3-8-27b-fp8-repacked-v1/pytorch/hf-fp8/1"
+    "/kaggle/input/models/keithtyser/"
+    "qwen3-8-flash-next-nvfp4/pytorch/radixark-modelopt-fp4/1"
 )
 # ---------------------------------------------------------------------------
 
@@ -103,14 +103,26 @@ SERVE_CELL = dedent(
                     continue
         print('vllm available:', have_vllm)
         if have_vllm:
+            # The CUDA driver libs are not on the default search path in the
+            # competition image; vLLM fails to load without this.
+            os.environ['LIBRARY_PATH'] = (
+                '/usr/local/nvidia/lib64:' + os.environ.get('LIBRARY_PATH', ''))
             log = open('/kaggle/working/vllm.log', 'w')
             cmd = [
                 sys.executable, '-m', 'vllm.entrypoints.openai.api_server',
                 '--model', MODEL_DIR,
                 '--served-model-name', 'atlas',
                 '--host', '127.0.0.1', '--port', '8000',
-                '--max-model-len', '16384',
+                '--dtype', 'bfloat16',
+                '--quantization', 'modelopt_fp4',
+                '--max-model-len', '32768',
+                '--max-num-seqs', '8',
                 '--gpu-memory-utilization', '0.90',
+                '--kv-cache-dtype', 'auto',
+                '--enable-chunked-prefill',
+                '--no-enable-prefix-caching',
+                '--tool-call-parser', 'qwen3_coder',
+                '--reasoning-parser', 'qwen3',
             ]
             proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
             print('vLLM starting (pid', proc.pid, ') — waiting for /v1/models ...')
@@ -187,6 +199,11 @@ RUN_CELL = dedent(
             'ATLAS_MAX_ACTIONS=360',
             'ATLAS_LEVEL_BUDGET=110',
             'ATLAS_LEVEL_HARD_CAP=220',
+            # Per-game wall clock.  The Swarm plays every game in its own
+            # thread, so this is concurrent, not additive; 2400s keeps the
+            # whole run well inside the 32400s rerun budget with the gateway's
+            # own teardown to spare.
+            'ATLAS_DEADLINE_S=2400',
             'ATLAS_CAL_FILE=/kaggle/working/atlas_calibration.jsonl',
         ]
         with open('/kaggle/working/ARC-AGI-3-Agents/.env', 'w') as f:
@@ -216,6 +233,9 @@ DUMMY_CELL = dedent(
 )
 
 
+OFFLINE_CELL_PATH = ROOT / "notebooks" / "offline_eval_cell.py"
+
+
 def build() -> dict:
     if not AGENT_SRC.exists():
         raise SystemExit(f"Could not find {AGENT_SRC}")
@@ -224,6 +244,9 @@ def build() -> dict:
     accel = _ACCELERATORS[ACCELERATOR]
 
     agent_body = AGENT_SRC.read_text()
+    if not OFFLINE_CELL_PATH.exists():
+        raise SystemExit(f"Could not find {OFFLINE_CELL_PATH}")
+    offline_body = OFFLINE_CELL_PATH.read_text()
 
     return {
         "metadata": {
@@ -255,12 +278,15 @@ def build() -> dict:
                 "Edit the agent source, rebuild, push. Do not edit cells by hand.\n\n"
                 f"- Accelerator: `{ACCELERATOR}`\n"
                 f"- Model: `{MODEL_DIR}`\n"
-                "- Internet: **disabled** (required)"
+                "- Internet: **disabled** (required)\n"
+                "- Cell 5 plays the 25 public games from `environment_files` "
+                "in an interactive session and prints RHAE per game."
             ),
             code_cell(INSTALL_CELL),
             code_cell(SERVE_CELL),
             code_cell("%%writefile /tmp/my_agent.py\n" + agent_body),
             code_cell(RUN_CELL),
+            code_cell(offline_body),
             code_cell(DUMMY_CELL),
         ],
     }
@@ -280,7 +306,9 @@ def write_metadata() -> None:
         "enable_internet": False,
         "dataset_sources": [],
         "competition_sources": ["arc-prize-2026-arc-agi-3"],
-        "model_sources": ["foysalemonshanto/qwen3-8-27b-fp8-repacked-v1/pytorch/hf-fp8"],
+        "model_sources": [
+            "keithtyser/qwen3-8-flash-next-nvfp4/pytorch/radixark-modelopt-fp4"
+        ],
         "kernel_sources": [],
     }
     METADATA_PATH.write_text(json.dumps(meta, indent=2))

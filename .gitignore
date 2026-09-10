@@ -5,3 +5,5 @@ recordings/
 server_recording/
 working/
 .env
+.venv/
+third_party/

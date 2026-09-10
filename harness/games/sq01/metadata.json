@@ -1,0 +1,14 @@
+{
+  "baseline_actions": [
+    7,
+    7,
+    9
+  ],
+  "class_name": "Sq01",
+  "game_id": "sq01-atlas01",
+  "tags": [
+    "atlas-bench",
+    "sq01"
+  ],
+  "title": "ATLAS benchmark fixture sq01"
+}
