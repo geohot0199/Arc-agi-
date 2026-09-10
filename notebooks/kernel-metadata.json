@@ -13,7 +13,7 @@
     "arc-prize-2026-arc-agi-3"
   ],
   "model_sources": [
-    "foysalemonshanto/qwen3-8-27b-fp8-repacked-v1/pytorch/hf-fp8"
+    "keithtyser/qwen3-8-flash-next-nvfp4/pytorch/radixark-modelopt-fp4"
   ],
   "kernel_sources": []
 }

@@ -1,0 +1,14 @@
+{
+  "baseline_actions": [
+    24,
+    64,
+    73
+  ],
+  "class_name": "Lt01",
+  "game_id": "lt01-atlas01",
+  "tags": [
+    "atlas-bench",
+    "lt01"
+  ],
+  "title": "ATLAS benchmark fixture lt01"
+}

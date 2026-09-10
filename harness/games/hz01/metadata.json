@@ -1,0 +1,14 @@
+{
+  "baseline_actions": [
+    35,
+    42,
+    33
+  ],
+  "class_name": "Hz01",
+  "game_id": "hz01-atlas01",
+  "tags": [
+    "atlas-bench",
+    "hz01"
+  ],
+  "title": "ATLAS benchmark fixture hz01"
+}
